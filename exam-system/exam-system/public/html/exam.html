@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Exam – ExamPro</title>
+<link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+<div id="loadingScreen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;">
+  <div class="spinner"></div>
+  <p style="color:var(--text-muted)">Loading exam…</p>
+</div>
+
+<div id="examScreen" class="hidden" style="max-width:860px;margin:0 auto;padding:24px 16px;">
+  <!-- Header -->
+  <div class="exam-header">
+    <div class="exam-title-section">
+      <h2 id="examTitle">—</h2>
+      <p id="examSubtitle">Loading…</p>
+    </div>
+    <div class="exam-timer" id="timerDisplay">00:00</div>
+  </div>
+
+  <!-- Question dots -->
+  <div class="card" style="margin-bottom:16px;padding:16px 20px;">
+    <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Questions Progress</div>
+    <div class="question-progress" id="questionDots"></div>
+  </div>
+
+  <!-- Question -->
+  <div class="question-card">
+    <div class="question-num" id="questionNum">Question 1 of N</div>
+    <div class="question-text" id="questionText">Loading…</div>
+    <div class="options-grid" id="optionsGrid"></div>
+    <div class="question-nav">
+      <button class="btn btn-secondary" id="prevBtn" onclick="prevQ()">← Previous</button>
+      <span style="color:var(--text-muted);font-size:0.875rem" id="answeredCount">0 answered</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" id="nextBtn" onclick="nextQ()">Next →</button>
+        <button class="btn btn-danger" id="submitBtn" onclick="confirmSubmit()" style="display:none">Submit Exam</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+let exam       = null;
+let questions  = [];
+let answers    = {};        // { questionId: chosenOpt }
+let current    = 0;
+let timerSecs  = 0;
+let timerInterval = null;
+let startTime  = null;
+let examId     = null;
+let submitted  = false;
+
+// ── Prevent back/refresh cheating ──────────────────────────
+history.pushState(null, null, location.href);
+window.onpopstate = () => { history.pushState(null, null, location.href); };
+window.onbeforeunload = e => {
+  if (!submitted) { e.preventDefault(); e.returnValue = ''; }
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !submitted) toast('⚠️ Warning: Please stay on this page during the exam!', 'error');
+});
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  examId = params.get('id');
+  if (!examId) { window.location.href = '/dashboard.html'; return; }
+
+  // Auth check
+  const me = await fetch('/api/me').then(r=>r.json());
+  if (me.role !== 'student') { window.location.href = '/login.html'; return; }
+
+  try {
+    const r = await fetch(`/api/exams/${examId}/start`);
+    if (r.status === 409) { alert('You have already taken this exam.'); window.location.href = '/dashboard.html'; return; }
+    if (!r.ok) throw new Error('Failed to load exam');
+    const data = await r.json();
+    exam      = data.exam;
+    questions = data.questions;
+    startExam();
+  } catch(e) {
+    alert('Error loading exam: ' + e.message);
+    window.location.href = '/dashboard.html';
+  }
+}
+
+function startExam() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('examScreen').classList.remove('hidden');
+  document.getElementById('examTitle').textContent   = exam.title;
+  document.getElementById('examSubtitle').textContent = `${questions.length} questions · ${exam.duration_mins} minutes`;
+
+  timerSecs = exam.duration_mins * 60;
+  startTime = Date.now();
+  renderDots();
+  renderQuestion(0);
+  startTimer();
+}
+
+function startTimer() {
+  timerInterval = setInterval(() => {
+    timerSecs--;
+    updateTimerDisplay();
+    if (timerSecs <= 0) { clearInterval(timerInterval); autoSubmit(); }
+    if (timerSecs === 60) toast('⚠️ 1 minute remaining!', 'error');
+    if (timerSecs === 300) toast('⚠️ 5 minutes remaining!', 'error');
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const el   = document.getElementById('timerDisplay');
+  const mins = Math.floor(timerSecs / 60).toString().padStart(2, '0');
+  const secs = (timerSecs % 60).toString().padStart(2, '0');
+  el.textContent = `${mins}:${secs}`;
+  if (timerSecs <= 60)  { el.style.color = 'var(--danger)'; }
+  else if (timerSecs <= 300) { el.style.color = 'var(--warning)'; }
+}
+
+function renderDots() {
+  const container = document.getElementById('questionDots');
+  container.innerHTML = questions.map((q, i) => `
+    <div class="q-dot ${i===current?'current':answers[q.id]?'answered':''}"
+         onclick="goTo(${i})" title="Question ${i+1}">${i+1}</div>`
+  ).join('');
+}
+
+function renderQuestion(idx) {
+  current = idx;
+  const q = questions[idx];
+  document.getElementById('questionNum').textContent   = `Question ${idx+1} of ${questions.length}`;
+  document.getElementById('questionText').textContent  = q.question;
+  document.getElementById('answeredCount').textContent = `${Object.keys(answers).length} answered`;
+
+  const opts = ['a','b','c','d'];
+  const labels = ['A','B','C','D'];
+  document.getElementById('optionsGrid').innerHTML = opts.map((opt, i) => `
+    <label class="option-label ${answers[q.id]===opt?'selected':''}" onclick="selectOpt('${opt}', ${q.id}, this)">
+      <input type="radio" name="opt_${q.id}" value="${opt}" ${answers[q.id]===opt?'checked':''} />
+      <div class="option-key">${labels[i]}</div>
+      <div class="option-text">${q['option_'+opt]}</div>
+    </label>`).join('');
+
+  document.getElementById('prevBtn').disabled = idx === 0;
+  document.getElementById('nextBtn').style.display = idx < questions.length-1 ? '' : 'none';
+  document.getElementById('submitBtn').style.display = idx === questions.length-1 ? '' : 'none';
+  renderDots();
+}
+
+function selectOpt(opt, qid, labelEl) {
+  answers[qid] = opt;
+  document.querySelectorAll('.option-label').forEach(l => l.classList.remove('selected'));
+  labelEl.classList.add('selected');
+  document.getElementById('answeredCount').textContent = `${Object.keys(answers).length} answered`;
+  renderDots();
+}
+
+function nextQ() { if (current < questions.length-1) renderQuestion(current+1); }
+function prevQ() { if (current > 0) renderQuestion(current-1); }
+function goTo(i) { renderQuestion(i); }
+
+function confirmSubmit() {
+  const unanswered = questions.length - Object.keys(answers).length;
+  const msg = unanswered > 0
+    ? `You have ${unanswered} unanswered question(s). Are you sure you want to submit?`
+    : 'Are you sure you want to submit the exam?';
+  if (confirm(msg)) doSubmit();
+}
+
+function autoSubmit() {
+  toast('⏰ Time is up! Submitting automatically…', 'error');
+  setTimeout(doSubmit, 1500);
+}
+
+async function doSubmit() {
+  if (submitted) return;
+  submitted = true;
+  clearInterval(timerInterval);
+  window.onbeforeunload = null;
+
+  const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+  try {
+    const r = await fetch(`/api/exams/${examId}/submit`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ answers, time_taken_secs: timeTaken })
+    });
+    const data = await r.json();
+    if (r.ok) {
+      window.location.href = `/result.html?id=${data.result.id}`;
+    } else {
+      alert('Submission error: ' + data.error);
+    }
+  } catch(e) { alert('Network error during submission'); }
+}
+
+function toast(msg, type='info') {
+  const tc = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  tc.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+init();
+</script>
+</body>
+</html>

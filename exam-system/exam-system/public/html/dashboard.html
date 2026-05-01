@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard – ExamPro</title>
+<link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+<div class="app-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <a class="sidebar-brand" href="/dashboard.html">
+      <div class="sidebar-brand-icon">🎓</div>
+      <div class="sidebar-brand-text">Exam<span>Pro</span></div>
+    </a>
+    <div class="sidebar-section">Student</div>
+    <nav class="sidebar-nav">
+      <a href="/dashboard.html" class="active" id="navDash"><span class="sidebar-icon">🏠</span> Dashboard</a>
+      <a href="#" onclick="showTab('exams')" id="navExams"><span class="sidebar-icon">📝</span> Available Exams</a>
+      <a href="#" onclick="showTab('history')" id="navHistory"><span class="sidebar-icon">📋</span> Exam History</a>
+      <a href="#" onclick="showTab('leaderboard')" id="navLB"><span class="sidebar-icon">🏆</span> Leaderboard</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="sidebar-user">
+        <div class="sidebar-user-name" id="sidebarName">Loading…</div>
+        <div class="sidebar-user-role">Student</div>
+      </div>
+      <button class="btn btn-secondary btn-block" style="margin-top:10px" onclick="logout()">Sign Out</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <div id="tabDashboard">
+      <div class="page-header">
+        <h1>Welcome back, <span id="userName">—</span> 👋</h1>
+        <p>Here's your exam activity at a glance.</p>
+      </div>
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="stat-icon purple">📝</div><div><div class="stat-value" id="statExams">—</div><div class="stat-label">Available Exams</div></div></div>
+        <div class="stat-card"><div class="stat-icon green">✅</div><div><div class="stat-value" id="statDone">—</div><div class="stat-label">Completed</div></div></div>
+        <div class="stat-card"><div class="stat-icon orange">📈</div><div><div class="stat-value" id="statAvg">—</div><div class="stat-label">Avg Score</div></div></div>
+        <div class="stat-card"><div class="stat-icon red">🏅</div><div><div class="stat-value" id="statBest">—</div><div class="stat-label">Best Score</div></div></div>
+      </div>
+
+      <h2 style="margin-bottom:16px;font-size:1.2rem">Available Exams</h2>
+      <div class="exam-grid" id="examGrid"><div class="spinner"></div></div>
+    </div>
+
+    <div id="tabExams" class="hidden">
+      <div class="page-header"><h1>All Exams</h1><p>Browse and start any available exam.</p></div>
+      <div class="exam-grid" id="examGrid2"><div class="spinner"></div></div>
+    </div>
+
+    <div id="tabHistory" class="hidden">
+      <div class="page-header"><h1>Exam History</h1><p>Review your past submissions.</p></div>
+      <div class="card"><div class="table-wrap"><table id="historyTable">
+        <thead><tr><th>Exam</th><th>Subject</th><th>Score</th><th>Percentage</th><th>Result</th><th>Date</th><th>Action</th></tr></thead>
+        <tbody id="historyBody"><tr><td colspan="7" class="loading-wrap"><div class="spinner"></div></td></tr></tbody>
+      </table></div></div>
+    </div>
+
+    <div id="tabLeaderboard" class="hidden">
+      <div class="page-header"><h1>Leaderboard 🏆</h1><p>Top students ranked by average score.</p></div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Rank</th><th>Student</th><th>Exams Taken</th><th>Avg Score</th><th>Best Score</th><th>Passed</th></tr></thead>
+        <tbody id="lbBody"><tr><td colspan="6" class="loading-wrap"><div class="spinner"></div></td></tr></tbody>
+      </table></div></div>
+    </div>
+  </main>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+let currentUser = null;
+let allExams = [];
+
+// ── Auth check ──────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await fetch('/api/me');
+    const d = await r.json();
+    if (!r.ok || d.role !== 'student') { window.location.href = '/login.html'; return; }
+    currentUser = d.user;
+    document.getElementById('userName').textContent  = currentUser.full_name.split(' ')[0];
+    document.getElementById('sidebarName').textContent = currentUser.full_name;
+    loadDashboard();
+  } catch(e) { window.location.href = '/login.html'; }
+}
+
+async function loadDashboard() {
+  await Promise.all([loadExams(), loadHistory()]);
+}
+
+async function loadExams() {
+  const r = await fetch('/api/exams');
+  allExams = await r.json();
+  renderExams(allExams, 'examGrid');
+  renderExams(allExams, 'examGrid2');
+  document.getElementById('statExams').textContent = allExams.filter(e=>!e.already_taken).length;
+  document.getElementById('statDone').textContent  = allExams.filter(e=>e.already_taken).length;
+}
+
+async function loadHistory() {
+  const r = await fetch('/api/results');
+  const results = await r.json();
+  if (!results.length) {
+    document.getElementById('historyBody').innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">📭</div><h3>No exams taken yet</h3><p>Start your first exam from the dashboard</p></div></td></tr>';
+    document.getElementById('statAvg').textContent  = '—';
+    document.getElementById('statBest').textContent = '—';
+    return;
+  }
+  const avg  = (results.reduce((s,r)=>s+parseFloat(r.percentage),0)/results.length).toFixed(1);
+  const best = Math.max(...results.map(r=>parseFloat(r.percentage))).toFixed(1);
+  document.getElementById('statAvg').textContent  = avg+'%';
+  document.getElementById('statBest').textContent = best+'%';
+  document.getElementById('historyBody').innerHTML = results.map(r=>`
+    <tr>
+      <td>${r.exam_title}</td>
+      <td><span class="badge badge-info">${r.subject_name}</span></td>
+      <td>${r.score}/${r.total_marks}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="score-bar-wrap"><div class="score-bar" style="width:${r.percentage}%"></div></div>
+          ${r.percentage}%
+        </div>
+      </td>
+      <td><span class="badge ${r.passed?'badge-success':'badge-danger'}">${r.passed?'PASS':'FAIL'}</span></td>
+      <td>${new Date(r.submitted_at).toLocaleDateString()}</td>
+      <td><a href="/result.html?id=${r.id}" class="btn btn-secondary btn-sm">View</a></td>
+    </tr>`).join('');
+}
+
+async function loadLeaderboard() {
+  const r    = await fetch('/api/leaderboard');
+  const rows = await r.json();
+  const rankClass = i => i===0?'gold':i===1?'silver':i===2?'bronze':'';
+  const rankIcon  = i => i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+  document.getElementById('lbBody').innerHTML = rows.map((s,i)=>`
+    <tr>
+      <td><span class="lb-rank ${rankClass(i)}">${rankIcon(i)||'#'+(i+1)}</span></td>
+      <td>${s.full_name}<br/><small style="color:var(--text-muted)">@${s.username}</small></td>
+      <td>${s.exams_taken}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="score-bar-wrap"><div class="score-bar" style="width:${s.avg_score}%"></div></div>
+          ${parseFloat(s.avg_score).toFixed(1)}%
+        </div>
+      </td>
+      <td>${parseFloat(s.best_score).toFixed(1)}%</td>
+      <td>${s.total_passed}</td>
+    </tr>`).join('');
+}
+
+function renderExams(exams, containerId) {
+  const el = document.getElementById(containerId);
+  if (!exams.length) { el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><h3>No exams available</h3></div>'; return; }
+  el.innerHTML = exams.map(e => `
+    <div class="exam-card ${e.already_taken?'exam-taken':''}">
+      <div class="exam-subject">${e.subject_name}</div>
+      <div class="exam-title">${e.title}</div>
+      <div class="exam-desc">${e.description||'No description provided.'}</div>
+      <div class="exam-meta">
+        <div class="exam-meta-item">⏱️ ${e.duration_mins} min</div>
+        <div class="exam-meta-item">📝 ${e.question_count} Qs</div>
+        <div class="exam-meta-item">🎯 ${e.total_marks} marks</div>
+      </div>
+      ${e.already_taken
+        ? '<button class="btn btn-secondary btn-block" disabled>✅ Already Taken</button>'
+        : `<button class="btn btn-primary btn-block" onclick="startExam(${e.id})">Start Exam →</button>`
+      }
+    </div>`).join('');
+}
+
+function startExam(id) {
+  if (confirm('Start this exam? Once started, the timer will begin. Make sure you are ready!')) {
+    window.location.href = `/exam.html?id=${id}`;
+  }
+}
+
+function showTab(tab) {
+  ['Dashboard','Exams','History','Leaderboard'].forEach(t => {
+    document.getElementById('tab'+t).classList.add('hidden');
+  });
+  document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
+  if (tab === 'leaderboard') loadLeaderboard();
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Login – ExamPro</title>
+<link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🛡️</div>
+      <div class="auth-logo-text">Exam<span>Pro</span> <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400">Admin</span></div>
+    </div>
+    <h1 class="auth-title">Admin Portal</h1>
+    <p class="auth-subtitle">Sign in with your admin credentials</p>
+    <div id="alertBox" class="alert hidden"></div>
+    <div class="form-group">
+      <label class="form-label">Admin Username</label>
+      <input id="username" type="text" class="form-control" placeholder="admin" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input id="password" type="password" class="form-control" placeholder="••••••••" />
+    </div>
+    <button id="loginBtn" class="btn btn-primary btn-block btn-lg" onclick="doLogin()">Admin Sign In</button>
+    <div class="auth-footer"><a href="/login.html">← Student login</a></div>
+  </div>
+</div>
+<script>
+async function doLogin() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('loginBtn');
+  if (!username || !password) { showAlert('Fill in all fields', 'danger'); return; }
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const r = await fetch('/api/admin/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json();
+    if (r.ok) { window.location.href = '/admin.html'; }
+    else { showAlert(data.error || 'Login failed', 'danger'); btn.disabled=false; btn.textContent='Admin Sign In'; }
+  } catch(e) { showAlert('Network error', 'danger'); btn.disabled=false; btn.textContent='Admin Sign In'; }
+}
+function showAlert(msg,type) {
+  const el = document.getElementById('alertBox');
+  el.className = `alert alert-${type}`; el.textContent = msg;
+}
+document.addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+fetch('/api/me').then(r=>r.json()).then(d=>{ if(d.role==='admin') window.location.href='/admin.html'; });
+</script>
+</body>
+</html>

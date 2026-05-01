@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Result – ExamPro</title>
+<link rel="stylesheet" href="/css/main.css" />
+</head>
+<body style="padding:32px 16px">
+<div style="max-width:800px;margin:0 auto">
+  <div style="margin-bottom:16px">
+    <a href="/dashboard.html" class="btn btn-secondary btn-sm">← Back to Dashboard</a>
+  </div>
+
+  <div id="loadingWrap" class="loading-wrap"><div class="spinner"></div></div>
+
+  <div id="resultWrap" class="hidden">
+    <!-- Hero result card -->
+    <div class="result-hero">
+      <div class="result-ring">
+        <svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="80" cy="80" r="70" fill="none" stroke="var(--bg3)" stroke-width="10"/>
+          <circle id="progressCircle" cx="80" cy="80" r="70" fill="none" stroke-width="10"
+            stroke-linecap="round"
+            stroke-dasharray="440"
+            stroke-dashoffset="440"
+            style="transition:stroke-dashoffset 1.4s ease;transform-origin:center;transform:rotate(-90deg)"/>
+        </svg>
+        <div class="result-pct">
+          <div class="result-pct-num" id="pctNum">0%</div>
+          <div class="result-pct-lbl">Score</div>
+        </div>
+      </div>
+      <div class="result-verdict" id="verdict">—</div>
+      <div id="examTitleR" style="color:var(--text-muted);margin-top:4px"></div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="result-stats" id="resultStats"></div>
+
+    <!-- Answer breakdown -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Answer Breakdown</div>
+        <div class="card-subtitle">Question-by-question review</div>
+      </div>
+      <div id="answerBreakdown"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function init() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
+  if (!id) { window.location.href = '/dashboard.html'; return; }
+
+  // Auth
+  const me = await fetch('/api/me').then(r=>r.json());
+  if (me.role !== 'student') { window.location.href='/login.html'; return; }
+
+  const r    = await fetch(`/api/results/${id}`);
+  const data = await r.json();
+  if (!r.ok) { alert('Result not found'); window.location.href='/dashboard.html'; return; }
+
+  renderResult(data.result, data.answers);
+}
+
+function renderResult(result, answers) {
+  document.getElementById('loadingWrap').style.display = 'none';
+  document.getElementById('resultWrap').classList.remove('hidden');
+
+  const pct = parseFloat(result.percentage);
+
+  // Animate ring
+  const circ = document.getElementById('progressCircle');
+  circ.style.stroke = result.passed ? 'var(--success)' : 'var(--danger)';
+  setTimeout(() => {
+    const offset = 440 - (440 * pct / 100);
+    circ.style.strokeDashoffset = offset;
+  }, 100);
+
+  // Animate percent counter
+  let count = 0;
+  const interval = setInterval(() => {
+    count += 2;
+    if (count >= pct) { count = pct; clearInterval(interval); }
+    document.getElementById('pctNum').textContent = count.toFixed(1) + '%';
+  }, 30);
+
+  const verdict = document.getElementById('verdict');
+  verdict.textContent = result.passed ? '🎉 Congratulations! You Passed!' : '😞 Better Luck Next Time';
+  verdict.className = 'result-verdict ' + (result.passed ? 'pass' : 'fail');
+
+  document.getElementById('examTitleR').textContent = result.exam_title + ' · ' + result.subject_name;
+
+  document.getElementById('resultStats').innerHTML = `
+    <div class="result-stat-card">
+      <div class="result-stat-val">${result.total_questions}</div>
+      <div class="result-stat-lbl">Total Questions</div>
+    </div>
+    <div class="result-stat-card" style="border-color:rgba(67,233,123,0.2)">
+      <div class="result-stat-val" style="color:var(--success)">${result.correct_answers}</div>
+      <div class="result-stat-lbl">Correct</div>
+    </div>
+    <div class="result-stat-card" style="border-color:rgba(255,107,107,0.2)">
+      <div class="result-stat-val" style="color:var(--danger)">${result.wrong_answers}</div>
+      <div class="result-stat-lbl">Wrong</div>
+    </div>
+    <div class="result-stat-card">
+      <div class="result-stat-val" style="color:var(--text-muted)">${result.total_questions - result.correct_answers - result.wrong_answers}</div>
+      <div class="result-stat-lbl">Skipped</div>
+    </div>
+    <div class="result-stat-card">
+      <div class="result-stat-val">${result.score}/${result.total_marks}</div>
+      <div class="result-stat-lbl">Score / Total</div>
+    </div>
+    <div class="result-stat-card">
+      <div class="result-stat-val">${formatTime(result.time_taken_secs)}</div>
+      <div class="result-stat-lbl">Time Taken</div>
+    </div>`;
+
+  // Answer breakdown
+  const optLabels = {a:'A', b:'B', c:'C', d:'D'};
+  document.getElementById('answerBreakdown').innerHTML = answers.map((a, i) => {
+    const status = !a.chosen_opt ? 'skipped' : a.is_correct ? 'correct' : 'wrong';
+    const colors = { correct:'var(--success)', wrong:'var(--danger)', skipped:'var(--text-muted)' };
+    const icons  = { correct:'✅', wrong:'❌', skipped:'⏭️' };
+    return `
+      <div style="border-bottom:1px solid var(--border);padding:16px 0;${i===answers.length-1?'border-bottom:none':''}">
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
+          <span style="font-size:1.1rem;flex-shrink:0">${icons[status]}</span>
+          <div>
+            <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Q${i+1}</div>
+            <div style="font-weight:500">${a.question}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-left:32px">
+          ${['a','b','c','d'].map(opt => {
+            const isChosen  = a.chosen_opt === opt;
+            const isCorrect = a.correct_opt === opt;
+            let bg = 'var(--bg3)'; let border = 'var(--border)';
+            if (isCorrect)  { bg='rgba(67,233,123,0.1)'; border='rgba(67,233,123,0.3)'; }
+            if (isChosen && !isCorrect) { bg='rgba(255,107,107,0.1)'; border='rgba(255,107,107,0.3)'; }
+            return `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:8px 12px;font-size:0.85rem">
+              <span style="font-weight:700;margin-right:8px">${optLabels[opt]}.</span>${a['option_'+opt]}
+              ${isCorrect ? ' <span style="color:var(--success);font-size:0.75rem">✓ Correct</span>' : ''}
+              ${isChosen && !isCorrect ? ' <span style="color:var(--danger);font-size:0.75rem">✗ Your answer</span>' : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs/60), s = secs%60;
+  return m+'m '+s+'s';
+}
+
+init();
+</script>
+</body>
+</html>

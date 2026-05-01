@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Student Login – ExamPro</title>
+<link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🎓</div>
+      <div class="auth-logo-text">Exam<span>Pro</span></div>
+    </div>
+    <h1 class="auth-title">Welcome back</h1>
+    <p class="auth-subtitle">Sign in to your student account</p>
+
+    <div id="alertBox" class="alert hidden"></div>
+
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input id="username" type="text" class="form-control" placeholder="Enter username" autocomplete="username" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input id="password" type="password" class="form-control" placeholder="Enter password" autocomplete="current-password" />
+    </div>
+    <button id="loginBtn" class="btn btn-primary btn-block btn-lg" onclick="doLogin()">Sign In</button>
+
+    <div class="auth-footer">Don't have an account? <a href="/register.html">Register here</a></div>
+    <div class="auth-footer" style="margin-top:8px"><a href="/admin-login.html">Admin login →</a></div>
+  </div>
+</div>
+<script>
+async function doLogin() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('loginBtn');
+  const alert = document.getElementById('alertBox');
+
+  if (!username || !password) { showAlert('Please fill in all fields', 'danger'); return; }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json();
+    if (r.ok) {
+      window.location.href = '/dashboard.html';
+    } else {
+      showAlert(data.error || 'Login failed', 'danger');
+      btn.disabled = false; btn.textContent = 'Sign In';
+    }
+  } catch(e) {
+    showAlert('Network error. Please try again.', 'danger');
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+function showAlert(msg, type) {
+  const el = document.getElementById('alertBox');
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+// Redirect if already logged in
+fetch('/api/me').then(r => r.json()).then(d => {
+  if (d.role === 'student') window.location.href = '/dashboard.html';
+});
+</script>
+</body>
+</html>

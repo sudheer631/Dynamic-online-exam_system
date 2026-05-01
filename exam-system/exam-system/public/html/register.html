@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Register – ExamPro</title>
+<link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🎓</div>
+      <div class="auth-logo-text">Exam<span>Pro</span></div>
+    </div>
+    <h1 class="auth-title">Create account</h1>
+    <p class="auth-subtitle">Join ExamPro as a student</p>
+
+    <div id="alertBox" class="alert hidden"></div>
+
+    <div class="form-group">
+      <label class="form-label">Full Name</label>
+      <input id="full_name" type="text" class="form-control" placeholder="Your full name" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input id="email" type="email" class="form-control" placeholder="you@example.com" />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input id="username" type="text" class="form-control" placeholder="username" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input id="password" type="password" class="form-control" placeholder="Min 6 chars" />
+      </div>
+    </div>
+    <button id="regBtn" class="btn btn-primary btn-block btn-lg" onclick="doRegister()">Create Account</button>
+    <div class="auth-footer">Already have an account? <a href="/login.html">Sign in</a></div>
+  </div>
+</div>
+<script>
+async function doRegister() {
+  const full_name = document.getElementById('full_name').value.trim();
+  const email     = document.getElementById('email').value.trim();
+  const username  = document.getElementById('username').value.trim();
+  const password  = document.getElementById('password').value;
+  const btn       = document.getElementById('regBtn');
+
+  if (!full_name || !email || !username || !password) { showAlert('All fields are required', 'danger'); return; }
+  if (password.length < 6) { showAlert('Password must be at least 6 characters', 'danger'); return; }
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) { showAlert('Username can only contain letters, numbers, underscores', 'danger'); return; }
+
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const r = await fetch('/api/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ full_name, email, username, password })
+    });
+    const data = await r.json();
+    if (r.ok) {
+      showAlert('Registration successful! Redirecting…', 'success');
+      setTimeout(() => window.location.href = '/login.html', 1500);
+    } else {
+      showAlert(data.error || 'Registration failed', 'danger');
+      btn.disabled = false; btn.textContent = 'Create Account';
+    }
+  } catch(e) {
+    showAlert('Network error', 'danger');
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
+}
+
+function showAlert(msg, type) {
+  const el = document.getElementById('alertBox');
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+</script>
+</body>
+</html>
